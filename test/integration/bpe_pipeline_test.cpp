@@ -14,6 +14,7 @@
 
 using bpe_test::apply_merges;
 using bpe_test::bytes;
+using bpe_test::has_merge;
 using bpe_test::merge_ids_in_order;
 using bpe_test::pack;
 using bpe_test::repeated;
@@ -49,8 +50,8 @@ TEST(BpePipelineTest, LearnsWellFormedTableOnCanonicalCorpus) {
 
   // "est" gets built: whichever of e/s/t pair merged first (id 256), a later
   // merge combines it with the remaining letter.
-  EXPECT_TRUE(table.count(pack(256u, 't')) == 1u ||
-              table.count(pack('e', 256u)) == 1u)
+  EXPECT_TRUE(has_merge(table, pack(256u, 't')) ||
+              has_merge(table, pack('e', 256u)))
       << "expected a follow-on merge building \"est\"";
 }
 

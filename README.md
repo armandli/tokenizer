@@ -11,6 +11,8 @@ LLM tokenizer in C++.
 - **GoogleTest** — used from a system install if present (`brew install googletest`),
   otherwise fetched and pinned automatically. Only needed when building tests.
 - **CLI11** — fetched automatically by CMake; nothing to install.
+- **simdjson** — used from a system install if present (`brew install simdjson`),
+  otherwise fetched and pinned automatically.
 
 ## Build & test
 
@@ -19,7 +21,7 @@ make            # configure + build (build/)
 make test       # ctest: all tests
 make test-unit
 make test-integration
-make run        # build/bin/tokenizer
+make run        # build/bin/tokenize_bpe
 ```
 
 Or directly:
@@ -33,6 +35,9 @@ ctest --test-dir build --output-on-failure
 ## Layout
 
 - `src/core` — `tokenizer_core` library (`build_bpe_table`). Links MLX publicly.
-- `src/app` — `tokenizer` CLI (CLI11 for argument parsing).
+- `src/app` — CLIs (CLI11 for argument parsing), both GPT-4 pre-tokenizer:
+  - `build_bpe -i input -o merges.json -n max-merges` — learn a merge table from a file.
+  - `tokenize_bpe -t merges.json -i input -o ids.txt` — encode a file into a
+    space-separated list of BPE token ids.
 - `test/` — GoogleTest suite, split into `unit/` and `integration/` (see
   `test/README.md`).

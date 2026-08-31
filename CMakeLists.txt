@@ -55,6 +55,19 @@ set(CLI11_BUILD_DOCS OFF CACHE BOOL "" FORCE)
 set(CLI11_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(CLI11_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(cli11)
+
+# simdjson: JSON parsing for merge-table load. Use a system install if one
+# exists, otherwise fetch a pinned copy. SYSTEM keeps its headers out of
+# -Wpedantic.
+FetchContent_Declare(
+  simdjson
+  GIT_REPOSITORY https://github.com/simdjson/simdjson.git
+  GIT_TAG v4.6.9
+  SYSTEM
+  FIND_PACKAGE_ARGS NAMES simdjson
+)
+set(SIMDJSON_DEVELOPER_MODE OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(simdjson)
 # ---------------------------------------------------------------------------
 
 add_subdirectory(src)

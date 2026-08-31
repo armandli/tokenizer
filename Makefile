@@ -27,4 +27,4 @@ clean:
 rebuild: clean build
 
 run: build
-	$(BUILD_DIR)/bin/tokenizer
+	$(BUILD_DIR)/bin/tokenize_bpe

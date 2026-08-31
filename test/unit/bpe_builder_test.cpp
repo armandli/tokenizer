@@ -13,8 +13,10 @@
 // minimum-frequency-2 threshold and the accepted tie-break limitation).
 
 using bpe_test::bytes;
+using bpe_test::has_merge;
 using bpe_test::left_of;
 using bpe_test::merge_ids_in_order;
+using bpe_test::merged_id;
 using bpe_test::pack;
 using bpe_test::right_of;
 using tokenizer::build_bpe_table;
@@ -38,8 +40,8 @@ TEST(BpeBuilderTest, MergesTheMostFrequentPairFirst) {
   const auto table = build_bpe_table({bytes("abab"), bytes("ab")}, 1);
 
   ASSERT_EQ(table.size(), 1u);
-  ASSERT_EQ(table.count(pack('a', 'b')), 1u);
-  EXPECT_EQ(table.at(pack('a', 'b')), 256u);
+  ASSERT_TRUE(has_merge(table, pack('a', 'b')));
+  EXPECT_EQ(merged_id(table, pack('a', 'b')).value(), 256u);
 }
 
 TEST(BpeBuilderTest, AssignsMergeIdsSequentiallyFrom256) {
@@ -57,11 +59,11 @@ TEST(BpeBuilderTest, ChainsMergesIntoHigherOrderTokens) {
   const auto table = build_bpe_table({bytes("aaaaaaaa")}, 8);
 
   ASSERT_EQ(table.size(), 2u);
-  ASSERT_EQ(table.count(pack('a', 'a')), 1u);
-  const tokenizer::CP aa = table.at(pack('a', 'a'));
+  ASSERT_TRUE(has_merge(table, pack('a', 'a')));
+  const tokenizer::CP aa = merged_id(table, pack('a', 'a')).value();
   EXPECT_EQ(aa, 256u);
-  ASSERT_EQ(table.count(pack(aa, aa)), 1u);
-  EXPECT_EQ(table.at(pack(aa, aa)), 257u);
+  ASSERT_TRUE(has_merge(table, pack(aa, aa)));
+  EXPECT_EQ(merged_id(table, pack(aa, aa)).value(), 257u);
 }
 
 TEST(BpeBuilderTest, StopsEarlyWhenCorpusIsExhausted) {
@@ -76,8 +78,8 @@ TEST(BpeBuilderTest, NeverFormsPairsAcrossSegmentBoundaries) {
   // "ab" then "ba": if pairs spanned the boundary we would see a (b,b) merge.
   const auto table = build_bpe_table({bytes("ab"), bytes("ba")}, 10);
 
-  EXPECT_EQ(table.count(pack('b', 'b')), 0u);
-  EXPECT_EQ(table.count(pack('a', 'a')), 0u);
+  EXPECT_FALSE(has_merge(table, pack('b', 'b')));
+  EXPECT_FALSE(has_merge(table, pack('a', 'a')));
   for (const auto& [key, val] : table) {
     (void)val;
     EXPECT_NE(left_of(key), right_of(key)) << "unexpected same-symbol merge";
@@ -90,7 +92,7 @@ TEST(BpeBuilderTest, CountsOverlappingRunsOfIdenticalBytes) {
   const auto table = build_bpe_table({bytes("aaa")}, 1);
 
   ASSERT_EQ(table.size(), 1u);
-  EXPECT_EQ(table.count(pack('a', 'a')), 1u);
+  EXPECT_TRUE(has_merge(table, pack('a', 'a')));
 }
 
 TEST(BpeBuilderTest, TreatsMultibyteCharactersAsBytes) {
@@ -102,8 +104,8 @@ TEST(BpeBuilderTest, TreatsMultibyteCharactersAsBytes) {
   const auto table = build_bpe_table({bytes(ee)}, 1);
 
   ASSERT_EQ(table.size(), 1u);
-  ASSERT_EQ(table.count(pack(0xC3u, 0xA9u)), 1u);
-  EXPECT_EQ(table.count(pack(0xE9u, 0xE9u)), 0u);
+  ASSERT_TRUE(has_merge(table, pack(0xC3u, 0xA9u)));
+  EXPECT_FALSE(has_merge(table, pack(0xE9u, 0xE9u)));
 }
 
 TEST(BpeBuilderTest, HandlesEmbeddedNulBytes) {
@@ -112,7 +114,7 @@ TEST(BpeBuilderTest, HandlesEmbeddedNulBytes) {
 
   ASSERT_EQ(table.size(), 1u);
   // Pairs are (a,\0) x2 and (\0,a) x1 -> (a,\0) wins.
-  EXPECT_EQ(table.count(pack('a', 0u)), 1u);
+  EXPECT_TRUE(has_merge(table, pack('a', 0u)));
 }
 
 TEST(BpeBuilderTest, DoesNotMergePairsSeenOnlyOnce) {
