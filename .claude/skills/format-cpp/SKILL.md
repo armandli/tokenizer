@@ -1,6 +1,6 @@
 ---
 name: format-cpp
-description: Formats C++ code according to 23 specific style rules covering whitespace, braces, preprocessor directives, namespaces, types, formatting, semantic transformations, and naming conventions. Use when user asks to "format my C++ code", "apply C++ style rules", "clean up this C++ file", or "run format-cpp on X". Run refactor-cpp before this skill. Do NOT use for explaining C++ code, debugging, or writing new C++ code from scratch.
+description: Formats C++ code according to 30 specific style rules covering whitespace, braces, preprocessor directives, namespaces, types, formatting, semantic transformations, naming conventions, and comments. Use when user asks to "format my C++ code", "apply C++ style rules", "clean up this C++ file", or "run format-cpp on X". Run refactor-cpp before this skill. Do NOT use for explaining C++ code, debugging, or writing new C++ code from scratch.
 argument-hint: "[file or directory path]"
 ---
 
@@ -189,6 +189,77 @@ struct JsonParser {};                     // after
 
 Names at or under ~24 characters are left as-is even if they contain a word that has a common abbreviation.
 
+**H3 — Member variables: `mUpperCamelCase`.** Non-static data members declared under a `private:` or `protected:` access specifier are prefixed with a lowercase `m`, followed by the name in `UpperCamelCase`:
+```cpp
+struct Session {
+protected:
+  std::string mSessionId;      // yes
+  int mRetryCount;             // yes
+  std::string session_id_;     // no
+  int m_retry_count;           // no
+  int mretrycount;             // no
+};
+```
+
+Unlike H2, abbreviations after the `m` are capitalized like ordinary words rather than written in all capitals — `mStateId`, `mUrlParser`, `mDbHandle`, not `mStateID` or `mURLParser`. The `m` is what signals "member", so the rest of the name stays visually plain.
+
+**Exceptions — do NOT rename:**
+- Public data members. Since E1 prefers `struct`, members with no access specifier above them are public and stay as they are — a plain data carrier like `struct ToolResult { bool ok; std::string output; };` reads worse with the prefix, and renaming it churns every call site.
+- Static data members and `static constexpr` constants, which follow their existing convention.
+- Members of types you do not own (third-party headers, generated code).
+
+When applying this rule, update every reference to the renamed member — in particular constructor member-initializer lists, in-class default initializers, and any place the old name appears inside the type's own methods. Because the members are private or protected, all references are within the type itself or its derived types, so the rename is contained; if a member turns out to be reachable from outside (a friend declaration, a macro), skip it and note it.
+
+### Group I: Comments
+
+**I1 — Delete comments the code already says.** Assume a reader who fully understands C++ syntax and the standard library. If that reader would learn nothing from the comment, remove it. Deletion is the default disposition: a comment survives only by falling under I2 or the exceptions below.
+
+```cpp
+// BEFORE
+// Loop over the edits and apply each one.
+for (const Edit& edit : edits) {
+  apply(edit);
+}
+
+// AFTER
+for (const Edit& edit : edits) {
+  apply(edit);
+}
+```
+
+The structural comments other rules require are not prose and are never removed by this rule: `#endif  // GUARD_H` (C1) and `}  // namespace A::B::C` (D3) stay exactly as those rules specify.
+
+**I2 — What a comment is for.** Keep an existing comment, and write a new one, only when it carries one of these:
+
+- a **magic number or literal** whose value isn't self-explaining
+- a **composed formula** — several standard ones combined into something not recognizable at a glance
+- a **condition deliberately left unchecked**, because an upstream guarantee makes it impossible
+- an **assumption about input** — a precondition the signature can't state
+- an **assumption about output** — a postcondition, ownership, lifetime, or invariant
+- a **non-obvious optimization**, and what it buys
+- **why** a decision was made, where the alternative would look equally reasonable
+
+The last one is the widest and the easiest to abuse. It covers the reason behind a choice, never a description of the choice — the code already shows *what* was done.
+
+```cpp
+// Overwrite rather than append: the notes are already in the prompt
+// each turn, so the file can't grow without bound.      <- keep (why)
+void MemoryTool::rewrite(std::string_view notes);
+
+// Rewrites the notes file.                              <- delete (what)
+void MemoryTool::rewrite(std::string_view notes);
+```
+
+**I3 — Brief, and only what's missing.** One or two lines. State the fact the code can't and stop — no restating the surrounding code, no narrating what the next lines will do, no hedging. A comment that qualifies under I2 but runs longer than it needs to is **condensed in place**: keep the fact, drop the prose.
+
+**Exceptions — never removed:**
+- The structural comments named in I1 (`#endif`, closing `namespace`).
+- License and copyright headers.
+- `TODO`, `FIXME`, `HACK`, `NOTE` markers, and anything citing an issue or ticket.
+- Comments in code the project doesn't own — third-party, vendored, or generated.
+- Tool directives such as `// NOLINT` and `// clang-format off` / `on`. These are instructions to other tools, not prose.
+- Commented-out code is outside this rule's scope: report it in Step 4, don't silently delete it.
+
 ---
 
 ## Error Handling
@@ -198,6 +269,7 @@ Names at or under ~24 characters are left as-is even if they contain a word that
 - **Template-heavy code**: Be extra cautious with G1 and G3 in heavily templated code; prefer skipping over breaking
 - **C++17 required**: Rules D3, G1, and G3 require C++17 or later. If the standard cannot be detected, ask the user before applying these rules
 - **Never break compilation**: If applying a rule would introduce a compile error, skip it
+- **Comment uncertainty**: If you cannot tell whether a comment carries information the code doesn't, keep it. A comment kept in error costs a line; one deleted in error destroys the only record of a decision
 
 ## Additional Resources
 

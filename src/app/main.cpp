@@ -1,29 +1,65 @@
+#include <cctype>
+#include <cstdint>
 #include <iostream>
-#include <sstream>
 #include <string>
+#include <utility>
+#include <vector>
 
-#include "tokenizer.h"
+#include <CLI/CLI.hpp>
+#include <mlx/mlx.h>
+
+#include <bpe_builder.h>
+
+namespace mx = mlx::core;
+
+namespace {
+
+std::vector<std::string> split_whitespace(const std::string& text) {
+  std::vector<std::string> out;
+  std::string cur;
+  for (char c : text) {
+    if (std::isspace(static_cast<unsigned char>(c))) {
+      if (not cur.empty()) out.push_back(std::exchange(cur, {}));
+    } else {
+      cur.push_back(c);
+    }
+  }
+  if (not cur.empty()) out.push_back(cur);
+  return out;
+}
+
+} // namespace
 
 int main(int argc, char** argv) {
-    std::string text;
+  CLI::App app{"tokenizer -- learn a BPE merge table from text"};
 
-    if (argc > 1) {
-        for (int i = 1; i < argc; ++i) {
-            if (i > 1) {
-                text += ' ';
-            }
-            text += argv[i];
-        }
-    } else {
-        std::ostringstream buffer;
-        buffer << std::cin.rdbuf();
-        text = buffer.str();
-    }
+  std::string text;
+  app.add_option("-t,--text", text, "training text; whitespace splits segments")
+      ->required();
 
-    tokenizer::Tokenizer tok;
-    for (const auto& token : tok.tokenize(text)) {
-        std::cout << token << '\n';
-    }
+  std::size_t max_merge = 50;
+  app.add_option("-m,--max-merge", max_merge, "maximum number of merges to learn")
+      ->capture_default_str();
 
-    return 0;
+  CLI11_PARSE(app, argc, argv);
+
+  const auto table = tokenizer::build_bpe_table(split_whitespace(text), max_merge);
+  std::cout << "learned " << table.size() << " merge(s)\n";
+
+  // Exercise MLX: load the learned token ids into an array and reduce on it.
+  std::vector<std::int32_t> ids;
+  for (const auto& [pair, id] : table) {
+    (void)pair;
+    ids.push_back(static_cast<std::int32_t>(id));
+  }
+  if (not ids.empty()) {
+    mx::array id_arr(ids.begin(), {static_cast<int>(ids.size())}, mx::int32);
+    mx::array lo = mx::min(id_arr);
+    mx::array hi = mx::max(id_arr);
+    mx::eval(lo, hi);
+    std::cout << "token-id range: " << lo.item<std::int32_t>() << ".."
+              << hi.item<std::int32_t>() << "\n";
+  }
+
+  return 0;
 }
