@@ -1,8 +1,7 @@
-#include <cctype>
 #include <cstdint>
 #include <iostream>
+#include <regex>
 #include <string>
-#include <utility>
 #include <vector>
 
 #include <CLI/CLI.hpp>
@@ -11,24 +10,6 @@
 #include <bpe_builder.h>
 
 namespace mx = mlx::core;
-
-namespace {
-
-std::vector<std::string> split_whitespace(const std::string& text) {
-  std::vector<std::string> out;
-  std::string cur;
-  for (char c : text) {
-    if (std::isspace(static_cast<unsigned char>(c))) {
-      if (not cur.empty()) out.push_back(std::exchange(cur, {}));
-    } else {
-      cur.push_back(c);
-    }
-  }
-  if (not cur.empty()) out.push_back(cur);
-  return out;
-}
-
-} // namespace
 
 int main(int argc, char** argv) {
   CLI::App app{"tokenizer -- learn a BPE merge table from text"};
@@ -43,7 +24,9 @@ int main(int argc, char** argv) {
 
   CLI11_PARSE(app, argc, argv);
 
-  const auto table = tokenizer::build_bpe_table(split_whitespace(text), max_merge);
+  const std::vector<char> bytes(text.begin(), text.end());
+  const auto segments = tokenizer::segment_corpus(bytes, std::regex{R"(\S+)"});
+  const auto table = tokenizer::build_bpe_table(segments, max_merge);
   std::cout << "learned " << table.size() << " merge(s)\n";
 
   // Exercise MLX: load the learned token ids into an array and reduce on it.

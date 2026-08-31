@@ -13,6 +13,7 @@
 // encoder that consumes the table the way a real caller would.
 
 using bpe_test::apply_merges;
+using bpe_test::bytes;
 using bpe_test::merge_ids_in_order;
 using bpe_test::pack;
 using bpe_test::repeated;
@@ -21,7 +22,7 @@ using tokenizer::build_bpe_table;
 namespace {
 
 // The textbook BPE corpus: low x5, lower x2, newest x6, widest x3.
-std::vector<std::string> canonical_corpus() {
+std::vector<std::vector<char>> canonical_corpus() {
   return repeated({"low", "lower", "newest", "widest"}, {5, 2, 6, 3});
 }
 
@@ -82,7 +83,7 @@ TEST(BpePipelineTest, EncoderRoundTripUsesLearnedMerges) {
 TEST(BpePipelineTest, HandlesHighBytesWithoutSignExtension) {
   // Bytes 0x80-0xFF must survive as 128..255, not sign-extend to ~0xFFFFFF80.
   const std::string high("\xC3\xA9\xC3\xA9\xC3\xA9", 6);
-  const auto table = build_bpe_table({high}, 2);
+  const auto table = build_bpe_table({bytes(high)}, 2);
 
   ASSERT_FALSE(table.empty());
   const auto first = bpe_test::first_merge_key(table);

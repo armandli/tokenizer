@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -15,6 +16,10 @@
 namespace bpe_test {
 
 using Table = tokenizer::umap<tokenizer::MK, tokenizer::CP>;
+
+// build_bpe_table / segment_corpus deal in raw byte buffers now; this turns a
+// test string literal into one so the call sites stay readable.
+inline std::vector<char> bytes(std::string_view s) { return {s.begin(), s.end()}; }
 
 // Pack an adjacent (left, right) token-id pair exactly the way bpe_builder does:
 // low 32 bits = left token, high 32 bits = right token.
@@ -89,11 +94,11 @@ inline std::vector<tokenizer::CP> apply_merges(const std::string& text,
 }
 
 // Repeat each segment `n` times -- a stand-in for word frequencies in a corpus.
-inline std::vector<std::string> repeated(const std::vector<std::string>& words,
-                                         const std::vector<int>& counts) {
-  std::vector<std::string> out;
+inline std::vector<std::vector<char>> repeated(const std::vector<std::string>& words,
+                                              const std::vector<int>& counts) {
+  std::vector<std::vector<char>> out;
   for (std::size_t i = 0; i < words.size(); ++i) {
-    for (int k = 0; k < counts[i]; ++k) out.push_back(words[i]);
+    for (int k = 0; k < counts[i]; ++k) out.push_back(bytes(words[i]));
   }
   return out;
 }

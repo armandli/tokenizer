@@ -4,6 +4,7 @@
 
 #include <gtest/gtest.h>
 
+#include <regex>
 #include <string>
 #include <vector>
 
@@ -11,6 +12,7 @@
 // behaviour per test. See test/README.md for implementation notes (the
 // minimum-frequency-2 threshold and the accepted tie-break limitation).
 
+using bpe_test::bytes;
 using bpe_test::left_of;
 using bpe_test::merge_ids_in_order;
 using bpe_test::pack;
@@ -24,16 +26,16 @@ TEST(BpeBuilderTest, EmptyCorpusYieldsNoMerges) {
 }
 
 TEST(BpeBuilderTest, SingleCharacterSegmentsYieldNoMerges) {
-  EXPECT_TRUE(build_bpe_table({"a", "b", "c"}, 10).empty());
+  EXPECT_TRUE(build_bpe_table({bytes("a"), bytes("b"), bytes("c")}, 10).empty());
 }
 
 TEST(BpeBuilderTest, MaxMergeZeroYieldsNoMerges) {
-  EXPECT_TRUE(build_bpe_table({"aaaa", "bbbb"}, 0).empty());
+  EXPECT_TRUE(build_bpe_table({bytes("aaaa"), bytes("bbbb")}, 0).empty());
 }
 
 TEST(BpeBuilderTest, MergesTheMostFrequentPairFirst) {
   // (a,b) appears 3x, (b,a) once -> first merge is (a,b) with id 256.
-  const auto table = build_bpe_table({"abab", "ab"}, 1);
+  const auto table = build_bpe_table({bytes("abab"), bytes("ab")}, 1);
 
   ASSERT_EQ(table.size(), 1u);
   ASSERT_EQ(table.count(pack('a', 'b')), 1u);
@@ -43,7 +45,7 @@ TEST(BpeBuilderTest, MergesTheMostFrequentPairFirst) {
 TEST(BpeBuilderTest, AssignsMergeIdsSequentiallyFrom256) {
   // Two 8-'a' segments collapse in three steps: (a,a) 14x -> 256,
   // (256,256) 6x -> 257, (257,257) 2x -> 258 (each still clears the freq-2 bar).
-  const auto table = build_bpe_table({"aaaaaaaa", "aaaaaaaa"}, 8);
+  const auto table = build_bpe_table({bytes("aaaaaaaa"), bytes("aaaaaaaa")}, 8);
 
   EXPECT_EQ(merge_ids_in_order(table),
             (std::vector<tokenizer::CP>{256u, 257u, 258u}));
@@ -52,7 +54,7 @@ TEST(BpeBuilderTest, AssignsMergeIdsSequentiallyFrom256) {
 TEST(BpeBuilderTest, ChainsMergesIntoHigherOrderTokens) {
   // "aaaaaaaa": (a,a) 7x -> 256, then (256,256) 3x -> 257; (257,257) occurs once
   // so the chain stops there.
-  const auto table = build_bpe_table({"aaaaaaaa"}, 8);
+  const auto table = build_bpe_table({bytes("aaaaaaaa")}, 8);
 
   ASSERT_EQ(table.size(), 2u);
   ASSERT_EQ(table.count(pack('a', 'a')), 1u);
@@ -65,14 +67,14 @@ TEST(BpeBuilderTest, ChainsMergesIntoHigherOrderTokens) {
 TEST(BpeBuilderTest, StopsEarlyWhenCorpusIsExhausted) {
   // Budget is 100 but the corpus only supports two merges before every segment
   // is a single token: (a,b) 4x -> 256, (256,256) 2x -> 257, then nothing left.
-  const auto table = build_bpe_table({"abab", "abab"}, 100);
+  const auto table = build_bpe_table({bytes("abab"), bytes("abab")}, 100);
 
   EXPECT_EQ(table.size(), 2u);
 }
 
 TEST(BpeBuilderTest, NeverFormsPairsAcrossSegmentBoundaries) {
   // "ab" then "ba": if pairs spanned the boundary we would see a (b,b) merge.
-  const auto table = build_bpe_table({"ab", "ba"}, 10);
+  const auto table = build_bpe_table({bytes("ab"), bytes("ba")}, 10);
 
   EXPECT_EQ(table.count(pack('b', 'b')), 0u);
   EXPECT_EQ(table.count(pack('a', 'a')), 0u);
@@ -85,7 +87,7 @@ TEST(BpeBuilderTest, NeverFormsPairsAcrossSegmentBoundaries) {
 TEST(BpeBuilderTest, CountsOverlappingRunsOfIdenticalBytes) {
   // Characterization, not a bug: "aaa" contributes 2 to (a,a) because adjacent
   // pairs overlap. Mainstream trainers (subword-nmt) count the same way.
-  const auto table = build_bpe_table({"aaa"}, 1);
+  const auto table = build_bpe_table({bytes("aaa")}, 1);
 
   ASSERT_EQ(table.size(), 1u);
   EXPECT_EQ(table.count(pack('a', 'a')), 1u);
@@ -97,7 +99,7 @@ TEST(BpeBuilderTest, TreatsMultibyteCharactersAsBytes) {
   // (0xC3,0xA9). A codepoint-level tokenizer would instead merge (0xE9,0xE9).
   // The `CP` / `convert_to_cp` naming ("code point") is therefore misleading.
   const std::string ee("\xC3\xA9\xC3\xA9", 4);
-  const auto table = build_bpe_table({ee}, 1);
+  const auto table = build_bpe_table({bytes(ee)}, 1);
 
   ASSERT_EQ(table.size(), 1u);
   ASSERT_EQ(table.count(pack(0xC3u, 0xA9u)), 1u);
@@ -106,7 +108,7 @@ TEST(BpeBuilderTest, TreatsMultibyteCharactersAsBytes) {
 
 TEST(BpeBuilderTest, HandlesEmbeddedNulBytes) {
   const std::string with_nul("a\0a\0", 4);
-  const auto table = build_bpe_table({with_nul}, 1);
+  const auto table = build_bpe_table({bytes(with_nul)}, 1);
 
   ASSERT_EQ(table.size(), 1u);
   // Pairs are (a,\0) x2 and (\0,a) x1 -> (a,\0) wins.
@@ -116,11 +118,34 @@ TEST(BpeBuilderTest, HandlesEmbeddedNulBytes) {
 TEST(BpeBuilderTest, DoesNotMergePairsSeenOnlyOnce) {
   // The frequency-2 threshold: "abcdef" has no repeated pair, so nothing is
   // learned. (Regression guard for the minimum-frequency fix in max_count.)
-  const auto table = build_bpe_table({"abcdef"}, 10);
+  const auto table = build_bpe_table({bytes("abcdef")}, 10);
 
   EXPECT_TRUE(table.empty())
       << "expected no merges from a corpus with no repetition, got "
       << table.size();
+}
+
+// segment_corpus: byte-level regex segmentation. The point of moving off
+// std::string is that a 0 byte is content, not a terminator -- so a run of
+// non-whitespace bytes containing NUL must come back as one segment.
+
+TEST(SegmentCorpusTest, SplitsRunsOfNonWhitespace) {
+  const auto segments =
+      tokenizer::segment_corpus(bytes("hello world  foo"), std::regex(R"(\S+)"));
+
+  ASSERT_EQ(segments.size(), 3u);
+  EXPECT_EQ(segments[0], bytes("hello"));
+  EXPECT_EQ(segments[1], bytes("world"));
+  EXPECT_EQ(segments[2], bytes("foo"));
+}
+
+TEST(SegmentCorpusTest, KeepsEmbeddedNulBytesInSegments) {
+  const std::vector<char> text{'a', '\0', 'b', ' ', 'c', '\0'};
+  const auto segments = tokenizer::segment_corpus(text, std::regex(R"(\S+)"));
+
+  ASSERT_EQ(segments.size(), 2u);
+  EXPECT_EQ(segments[0], (std::vector<char>{'a', '\0', 'b'}));
+  EXPECT_EQ(segments[1], (std::vector<char>{'c', '\0'}));
 }
 
 } // namespace

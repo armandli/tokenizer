@@ -1,5 +1,7 @@
 add_executable(tokenizer_unit_tests
   bpe_builder_test.cpp
+  gpt2_pattern_test.cpp
+  gpt4_pattern_test.cpp
   mlx_smoke_test.cpp
 )
 
