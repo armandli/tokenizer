@@ -1,6 +1,7 @@
 add_executable(tokenizer_unit_tests
   bpe_builder_test.cpp
   tokenize_test.cpp
+  decode_test.cpp
   merge_table_io_test.cpp
   gpt2_pattern_test.cpp
   gpt4_pattern_test.cpp

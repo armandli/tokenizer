@@ -1,14 +1,14 @@
 #include <bpe_builder.h>
 
-#include <cstdint>
 #include <map>
+#include <stack>
+#include <format>
 #include <optional>
-#include <unordered_map>
+#include <algorithm>
 
 namespace tokenizer {
 
 using ull = uint64_t;
-template <typename K, typename V> using umap = s::unordered_map<K, V>;
 
 namespace {
 
@@ -214,6 +214,53 @@ s::vector<CP> tokenize(const s::vector<char>& text, const MergeTable& merges){
   }
 
   return toks;
+}
+
+s::expected<DecodeMap, table_error> build_decode_map(const MergeTable& merges){
+  umap<CP, MK> reverse;
+  for (auto [p, m] : merges)
+    reverse[m] = p;
+
+  DecodeMap ret;
+
+  for (CP b = 0; b < 256U; ++b)
+    ret[b] = s::vector<char>{(char)b};
+
+  for (auto [p, m] : merges){
+    s::vector<char> seq;
+    s::stack<CP> st;
+    auto [f, s] = unpack_pair(p);
+    st.push(f);
+    st.push(s);
+    while (not st.empty()){
+      CP cp = st.top(); st.pop();
+      if (cp < 256U){
+        seq.push_back(cp);
+        continue;
+      }
+      auto iter = reverse.find(cp);
+      if (iter == s::end(reverse)) return s::unexpected(table_error(s::format("unexpected code point {}", cp)));
+
+      auto [f, s] = unpack_pair((*iter).second);
+      st.push(f);
+      st.push(s);
+    }
+    s::reverse(s::begin(seq), s::end(seq));
+    ret[m] = seq;
+  }
+  return ret;
+}
+
+s::expected<s::vector<char>, decode_error> decode(const s::vector<CP>& tokens, const DecodeMap& m){
+  s::vector<char> ret;
+  for (CP token : tokens){
+    auto iter = m.find(token);
+    if (iter == s::end(m)) return s::unexpected(decode_error(s::format("unexpected token value {}", token)));
+
+    for (auto si = (*iter).second.begin(); si != (*iter).second.end(); ++si)
+      ret.push_back(*si);
+  }
+  return ret;
 }
 
 void print_token_table(s::ostream& out, const MergeTable& merges){

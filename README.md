@@ -39,5 +39,7 @@ ctest --test-dir build --output-on-failure
   - `build_bpe -i input -o merges.json -n max-merges` — learn a merge table from a file.
   - `tokenize_bpe -t merges.json -i input -o ids.txt` — encode a file into a
     space-separated list of BPE token ids.
+  - `decode_bpe -t merges.json -i ids.txt -o output` — decode a token-id list
+    (as written by `tokenize_bpe`) back into the original bytes.
 - `test/` — GoogleTest suite, split into `unit/` and `integration/` (see
   `test/README.md`).
