@@ -21,3 +21,11 @@ add_executable(decode_bpe
 target_link_libraries(decode_bpe PRIVATE tokenizer_core CLI11::CLI11)
 
 target_compile_options(decode_bpe PRIVATE -Wall -Wextra -Wpedantic)
+
+add_executable(table_bpe
+    table_bpe.cpp
+)
+
+target_link_libraries(table_bpe PRIVATE tokenizer_core CLI11::CLI11)
+
+target_compile_options(table_bpe PRIVATE -Wall -Wextra -Wpedantic)

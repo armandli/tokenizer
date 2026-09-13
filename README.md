@@ -36,10 +36,14 @@ ctest --test-dir build --output-on-failure
 
 - `src/core` — `tokenizer_core` library (`build_bpe_table`). Links MLX publicly.
 - `src/app` — CLIs (CLI11 for argument parsing), both GPT-4 pre-tokenizer:
-  - `build_bpe -i input -o merges.json -n max-merges` — learn a merge table from a file.
+  - `build_bpe -i input1 [-i input2 ...] -o merges.json -n max-merges` — learn a
+    merge table from one or more files (each pre-split on its own, so merges
+    never span a file boundary).
   - `tokenize_bpe -t merges.json -i input -o ids.txt` — encode a file into a
     space-separated list of BPE token ids.
   - `decode_bpe -t merges.json -i ids.txt -o output` — decode a token-id list
     (as written by `tokenize_bpe`) back into the original bytes.
+  - `table_bpe -t merges.json` — print, for every learned token id starting at
+    256, the text it decodes to.
 - `test/` — GoogleTest suite, split into `unit/` and `integration/` (see
   `test/README.md`).

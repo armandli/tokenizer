@@ -24,10 +24,10 @@ std::vector<char> read_file(const std::string& path) {
 } // namespace
 
 int main(int argc, char** argv) {
-  CLI::App app{"build_bpe -- learn a BPE merge table from a file (GPT-4 pre-tokenizer)"};
+  CLI::App app{"build_bpe -- learn a BPE merge table from one or more files (GPT-4 pre-tokenizer)"};
 
-  std::string input_path;
-  app.add_option("-i,--input", input_path, "file to train the merge table on")
+  std::vector<std::string> input_paths;
+  app.add_option("-i,--input", input_paths, "file(s) to train the merge table on")
       ->required()
       ->check(CLI::ExistingFile);
 
@@ -42,11 +42,25 @@ int main(int argc, char** argv) {
   CLI11_PARSE(app, argc, argv);
 
   try {
-    const std::vector<char> corpus = read_file(input_path);
-    const auto table = tokenizer::build_gpt4_table(corpus, max_merges);
+    // Pre-split each file on its own, then combine the segments, so neither the
+    // pre-tokenizer regex nor a learned merge ever spans a file boundary --
+    // concatenating raw bytes first could fuse the tail of one file with the
+    // head of the next into a single bogus segment.
+    std::vector<std::vector<char>> segments;
+    std::size_t total_bytes = 0;
+    for (const auto& input_path : input_paths) {
+      const std::vector<char> corpus = read_file(input_path);
+      total_bytes += corpus.size();
+      auto file_segments = tokenizer::gpt4_presplit(corpus);
+      segments.insert(segments.end(),
+                       std::make_move_iterator(file_segments.begin()),
+                       std::make_move_iterator(file_segments.end()));
+    }
+
+    const auto table = tokenizer::build_bpe_table(segments, max_merges);
     tokenizer::save_merge_table(output_path, table);
-    std::cout << "learned " << table.size() << " merge(s) from " << corpus.size()
-              << " bytes; wrote " << output_path << "\n";
+    std::cout << "learned " << table.size() << " merge(s) from " << input_paths.size()
+              << " file(s), " << total_bytes << " bytes; wrote " << output_path << "\n";
   } catch (const std::exception& e) {
     std::cerr << "build_bpe: " << e.what() << "\n";
     return 1;
