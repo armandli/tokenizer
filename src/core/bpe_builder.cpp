@@ -1,5 +1,9 @@
 #include <bpe_builder.h>
 
+#include <bpe_internal.h>
+#include <bpe_trainer.h>
+#include <pretokenizer.h>
+
 #include <map>
 #include <stack>
 #include <format>
@@ -35,19 +39,6 @@ s::vector<s::vector<CP>> convert_to_cp(const s::vector<s::vector<char>>& segment
 }
 
 // ---- merge mechanics -----------------------------------------------------
-
-// Replace every non-overlapping, left-to-right occurrence of the adjacent pair
-// `key` with the single token `val`, in place.
-void merge_pair(s::vector<CP>& seq, MK key, CP val){
-  size_t i = 0;
-  while (i + 1 < seq.size()){
-    if (pack_pair(seq[i], seq[i+1]) == key){
-      seq[i] = val;
-      seq.erase(s::begin(seq) + i + 1);
-    }
-    i++;
-  }
-}
 
 void replace(s::vector<s::vector<CP>>& segments, MK key, CP val){
   for (s::vector<CP>& segment : segments){
@@ -152,7 +143,20 @@ const s::regex& gpt4_pattern(){
 
 } // namespace
 
-MergeTable build_bpe_table(const s::vector<s::vector<char>>& segments, size_t max_merge){
+// Declared in bpe_internal.h; see the comment there for why it is shared.
+void merge_pair(s::vector<CP>& seq, MK key, CP val){
+  size_t i = 0;
+  while (i + 1 < seq.size()){
+    if (pack_pair(seq[i], seq[i+1]) == key){
+      seq[i] = val;
+      seq.erase(s::begin(seq) + i + 1);
+    }
+    i++;
+  }
+}
+
+MergeTable build_bpe_table_reference(const s::vector<s::vector<char>>& segments,
+                                    size_t max_merge){
   s::vector<s::vector<CP>> ss = convert_to_cp(segments);
 
   MergeTable ret;
@@ -196,8 +200,12 @@ MergeTable build_gpt2_table(const s::vector<char>& text, size_t max_merges){
   return build_bpe_table(gpt2_presplit(text), max_merges);
 }
 
-s::vector<s::vector<char>> gpt4_presplit(const s::vector<char>& text){
+s::vector<s::vector<char>> gpt4_presplit_regex(const s::vector<char>& text){
   return segment_corpus(text, gpt4_pattern());
+}
+
+s::vector<s::vector<char>> gpt4_presplit(const s::vector<char>& text){
+  return gpt4_segments(text);
 }
 
 MergeTable build_gpt4_table(const s::vector<char>& text, size_t max_merges){
@@ -287,6 +295,14 @@ void print_token_table(s::ostream& out, const MergeTable& merges){
     combined.insert(s::end(combined), s::begin(sstr), s::end(sstr));
     legend[val] = combined;
   }
+}
+
+MergeTable build_bpe_table(const s::vector<s::vector<char>>& segments, size_t max_merge){
+  // Kept for callers that already hold every segment. build_bpe feeds the trainer
+  // directly instead, so it never builds this vector at all.
+  BpeTrainer trainer;
+  for (const auto& segment : segments) trainer.add_segment(segment);
+  return trainer.build(max_merge);
 }
 
 } // tokenizer

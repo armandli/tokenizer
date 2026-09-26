@@ -1,10 +1,18 @@
+#include <arrow_io.h>
 #include <bpe_builder.h>
+#include <bpe_trainer.h>
+#include <corpus_input.h>
 
+#include <arrow_test_helpers.h>
 #include <bpe_test_helpers.h>
 
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <filesystem>
+#include <fstream>
+#include <cstddef>
+#include <iterator>
 #include <string>
 #include <vector>
 
@@ -91,6 +99,97 @@ TEST(BpePipelineTest, HandlesHighBytesWithoutSignExtension) {
   ASSERT_TRUE(first.has_value());
   EXPECT_EQ(bpe_test::left_of(*first), 0xC3u);
   EXPECT_EQ(bpe_test::right_of(*first), 0xA9u);
+}
+
+// A HuggingFace `datasets` split saved to disk: one .arrow shard per file plus
+// JSON metadata sidecars. Training on the directory has to go through the Arrow
+// reader and ignore the sidecars -- feeding `state.json` to the trainer would
+// fold dataset bookkeeping into the merge table.
+TEST(BpePipelineTest, TrainsOnArrowDatasetDirectoryIgnoringSidecars) {
+  namespace fs = std::filesystem;
+
+  const fs::path dir = fs::path(testing::TempDir()) / "bpe_pipeline_hf_split";
+  fs::remove_all(dir);
+  fs::create_directories(dir);
+
+  const fs::path shard = dir / "data-00000-of-00001.arrow";
+  arrow_test::write_arrow_fixture(
+      shard.string(), arrow_test::Encoding::Stream,
+      {{arrow_test::Row("low low low low low"), arrow_test::Row("lower lower")},
+       {arrow_test::Row("newest newest newest newest newest newest"),
+        arrow_test::Row("widest widest widest")}});
+  {
+    std::ofstream state(dir / "state.json", std::ios::binary | std::ios::trunc);
+    state << R"({"_data_files":[{"filename":"data-00000-of-00001.arrow"}],"_split":"train"})";
+    std::ofstream info(dir / "dataset_info.json", std::ios::binary | std::ios::trunc);
+    info << R"({"builder_name":"parquet","features":{"text":{"dtype":"string"}}})";
+  }
+
+  // Train the way build_bpe does: enumerate, then pre-split each row on its own
+  // so no merge spans a row boundary.
+  const auto train = [](const std::vector<std::string>& input_paths) {
+    std::vector<std::vector<char>> segments;
+    for (const auto& file : tokenizer::expand_input_paths(input_paths)) {
+      EXPECT_EQ(file.kind, tokenizer::InputKind::ArrowIpc) << file.path;
+      for (const auto& row : tokenizer::read_arrow_column(file.path, "text")) {
+        auto row_segments = tokenizer::gpt4_presplit(row);
+        segments.insert(segments.end(), std::make_move_iterator(row_segments.begin()),
+                        std::make_move_iterator(row_segments.end()));
+      }
+    }
+    return build_bpe_table(segments, 10);
+  };
+
+  const auto from_dir = train({dir.string()});
+  const auto from_shard = train({shard.string()});
+
+  // The sidecars contributed nothing: naming the directory and naming the shard
+  // learn the same table.
+  ASSERT_FALSE(from_dir.empty());
+  EXPECT_EQ(from_dir, from_shard);
+
+  // And it is the canonical corpus's table -- (e,s) and (s,t) tie at 9x here
+  // too, so the first merge is one of them.
+  const auto first = bpe_test::first_merge_key(from_dir);
+  ASSERT_TRUE(first.has_value());
+  EXPECT_TRUE(*first == pack('e', 's') or *first == pack('s', 't'));
+}
+
+// build_bpe pre-splits Arrow rows across threads. Row order and the split between
+// workers must not reach the table -- the per-thread segment counts are summed,
+// not concatenated, so the result is the same whatever the slicing was.
+TEST(BpePipelineTest, ArrowTrainingIsIndependentOfThreadCount) {
+  namespace fs = std::filesystem;
+
+  const fs::path dir = fs::path(testing::TempDir()) / "bpe_pipeline_threads";
+  fs::remove_all(dir);
+  fs::create_directories(dir);
+
+  // Enough rows to slice several ways, sharing vocabulary so the per-thread maps
+  // overlap rather than partitioning cleanly.
+  std::vector<arrow_test::Row> rows;
+  const char* vocabulary[] = {"the cat sat on the mat", "a cat and a hat",
+                              "the mat and the hat", "cats sat on hats",
+                              "the cat had a hat"};
+  for (int r = 0; r < 400; ++r) rows.push_back(arrow_test::Row(vocabulary[r % 5]));
+
+  const fs::path shard = dir / "data-00000-of-00001.arrow";
+  arrow_test::write_arrow_fixture(shard.string(), arrow_test::Encoding::Stream, {rows});
+
+  const auto rows_read = tokenizer::read_arrow_column(shard.string(), "text");
+  ASSERT_EQ(rows_read.size(), 400u);
+
+  const auto train = [&rows_read](std::size_t threads) {
+    tokenizer::BpeTrainer trainer;
+    trainer.add_texts(rows_read, threads);
+    return trainer.build(120);
+  };
+
+  const auto single = train(1);
+  ASSERT_FALSE(single.empty());
+  for (const std::size_t threads : {2u, 3u, 7u, 16u}) {
+    EXPECT_EQ(train(threads), single) << "threads=" << threads;
+  }
 }
 
 } // namespace

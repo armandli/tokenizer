@@ -41,6 +41,18 @@ endif()
 find_package(MLX CONFIG REQUIRED)
 message(STATUS "Found MLX ${MLX_VERSION} (metal: ${MLX_BUILD_METAL})")
 
+# Apache Arrow: reads Arrow IPC (.arrow) dataset files -- the on-disk form of a
+# HuggingFace `datasets` split. Used from an existing Homebrew install
+# (`brew install apache-arrow`) rather than built from source: building Arrow
+# C++ pulls in thrift/grpc/absl and takes far longer than this whole project.
+# Only the IPC reader is used, so Parquet is deliberately not requested.
+find_package(Arrow CONFIG REQUIRED)
+message(STATUS "Found Arrow ${ARROW_VERSION}")
+
+# Threads: the trainer pre-splits on std::thread.
+set(THREADS_PREFER_PTHREAD_FLAG ON)
+find_package(Threads REQUIRED)
+
 # CLI11: command-line parsing for the app. Header-only. Use a system install if
 # one exists, otherwise fetch a pinned copy. SYSTEM keeps its headers out of
 # -Wpedantic.
