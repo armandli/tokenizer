@@ -14,8 +14,11 @@ target_include_directories(tokenizer_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 # simdjson is a private implementation detail of merge_table_io.cpp, and Arrow
 # of arrow_io.cpp -- no simdjson or Arrow type appears in any header.
 target_link_libraries(tokenizer_core
-  PUBLIC mlx Threads::Threads
+  PUBLIC Threads::Threads
   PRIVATE simdjson::simdjson Arrow::arrow_shared
 )
+if(MLX_FOUND)
+  target_link_libraries(tokenizer_core PUBLIC mlx)
+endif()
 
 target_compile_options(tokenizer_core PRIVATE -Wall -Wextra -Wpedantic)

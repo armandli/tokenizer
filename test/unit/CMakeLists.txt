@@ -9,8 +9,10 @@ add_executable(tokenizer_unit_tests
   pretokenizer_test.cpp
   gpt2_pattern_test.cpp
   gpt4_pattern_test.cpp
-  mlx_smoke_test.cpp
 )
+if(MLX_FOUND)
+  target_sources(tokenizer_unit_tests PRIVATE mlx_smoke_test.cpp)
+endif()
 
 # Arrow is linked here only so the tests can WRITE the .arrow fixtures they
 # then read back; production code links it privately inside tokenizer_core.

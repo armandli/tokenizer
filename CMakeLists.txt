@@ -22,6 +22,8 @@ include(FetchContent)
 
 # MLX: linear-algebra / tensor library for Apple silicon. Used from an existing
 # system install (Homebrew or `pip install mlx`) rather than built from source.
+# Optional: on platforms without an MLX install (e.g. Linux) the build proceeds
+# without it and the MLX smoke test is skipped.
 # Add the Homebrew prefix to the search path so find_package works no matter
 # which cmake binary is invoked.
 if(APPLE)
@@ -38,12 +40,17 @@ if(APPLE)
     list(APPEND CMAKE_PREFIX_PATH "${HOMEBREW_PREFIX}")
   endif()
 endif()
-find_package(MLX CONFIG REQUIRED)
-message(STATUS "Found MLX ${MLX_VERSION} (metal: ${MLX_BUILD_METAL})")
+find_package(MLX CONFIG QUIET)
+if(MLX_FOUND)
+  message(STATUS "Found MLX ${MLX_VERSION} (metal: ${MLX_BUILD_METAL})")
+else()
+  message(STATUS "MLX not found; building without it")
+endif()
 
 # Apache Arrow: reads Arrow IPC (.arrow) dataset files -- the on-disk form of a
-# HuggingFace `datasets` split. Used from an existing Homebrew install
-# (`brew install apache-arrow`) rather than built from source: building Arrow
+# HuggingFace `datasets` split. Used from an existing system install
+# (macOS: `brew install apache-arrow`; Ubuntu/Debian: `libarrow-dev` from the
+# Apache Arrow apt repository) rather than built from source: building Arrow
 # C++ pulls in thrift/grpc/absl and takes far longer than this whole project.
 # Only the IPC reader is used, so Parquet is deliberately not requested.
 find_package(Arrow CONFIG REQUIRED)
